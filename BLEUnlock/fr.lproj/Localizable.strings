@@ -37,3 +37,8 @@
 "use_screensaver_to_lock" = "Utiliser l'écran de veille pour verrouiller";
 "wake_on_proximity" = "Réveil lorsqu'à proximité";
 "wake_without_unlocking" = "Réveil sans déverrouiller";
+"disable_for_duration" = "Désactiver pendant une durée";
+"not_applicable" = "N/A";
+"hour" = "heure";
+"hours" = "heures";
+"disabled_for_countdown" = "Désactivé pendant %d %@ %d %@";

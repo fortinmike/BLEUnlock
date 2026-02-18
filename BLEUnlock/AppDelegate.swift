@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let ble = BLE()
     let mainMenu = NSMenu()
+    let disableForMenu = NSMenu()
     let deviceMenu = NSMenu()
     let lockRSSIMenu = NSMenu()
     let unlockRSSIMenu = NSMenu()
@@ -31,10 +32,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     var inScreensaver = false
     var lastRSSI: Int? = nil
     var didRunEventScriptSinceLock = false
+    var disabled = false
+    var disableUntil: Date?
+    var disableDuration = 0
+    var disableTimer: Timer?
+    var disableStatusMenuItem: NSMenuItem?
 
     func menuWillOpen(_ menu: NSMenu) {
+        syncDisableForState()
         if menu == deviceMenu {
             ble.startScanning()
+        } else if menu == disableForMenu {
+            let isDisabled = disabled
+            for item in menu.items {
+                if item.action == #selector(setDisableFor) {
+                    if item.tag == 0 {
+                        item.state = isDisabled ? .off : .on
+                    } else if isDisabled && item.tag == disableDuration {
+                        item.state = .on
+                    } else {
+                        item.state = .off
+                    }
+                }
+            }
         } else if menu == lockRSSIMenu {
             for item in menu.items {
                 if item.tag == ble.lockRSSI {
@@ -218,6 +238,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func updatePresence(presence: Bool, reason: String) {
+        if disabled {
+            manualLock = false
+            return
+        }
+
         if presence {
             if ble.unlockRSSI != ble.UNLOCK_DISABLED {
                 if let un = userNotification {
@@ -285,6 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
     
     func tryUnlockScreen() {
+        guard !disabled else { return }
         guard !manualLock else { return }
         guard ble.presence else { return }
         guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
@@ -347,7 +373,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     @objc func onUnlock() {
+        manualLock = false
         didRunEventScriptSinceLock = false
+        guard !disabled else { return }
         Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             print("onUnlock")
             if Date().timeIntervalSince1970 >= self.unlockedAt + 10 {
@@ -357,7 +385,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 self.playNowPlaying()
             }
         })
-        manualLock = false
         Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             checkUpdate()
         })
@@ -577,6 +604,121 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         AboutBox.showAboutBox()
     }
 
+    func clearTimer(_ timer: inout Timer?) {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func localizedUnit(_ value: Int, singular: String, plural: String) -> String {
+        return t(value == 1 ? singular : plural)
+    }
+
+    func startTemporaryDisable(duration: Int) {
+        disableDuration = duration
+        disableUntil = Date().addingTimeInterval(Double(duration))
+        disabled = true
+        clearTimer(&wakeTimer)
+        startDisableTimer(reset: true)
+        syncDisableForState()
+    }
+
+    @objc func setDisableFor(_ menuItem: NSMenuItem) {
+        if menuItem.tag == 0 {
+            stopTemporaryDisable()
+            return
+        }
+        startTemporaryDisable(duration: menuItem.tag)
+    }
+
+    func constructDisableForMenu() {
+        let minuteDurations = [15, 30, 45, 60]
+        disableForMenu.addItem(withTitle: t("not_applicable"), action: #selector(setDisableFor), keyEquivalent: "").tag = 0
+        minuteDurations.forEach { minutes in
+            disableForMenu.addItem(withTitle: disableDurationTitle(totalSeconds: minutes * 60), action: #selector(setDisableFor), keyEquivalent: "").tag = minutes * 60
+        }
+        for hours in 2...12 {
+            disableForMenu.addItem(withTitle: disableDurationTitle(totalSeconds: hours * 60 * 60), action: #selector(setDisableFor), keyEquivalent: "").tag = hours * 60 * 60
+        }
+        disableForMenu.delegate = self
+    }
+
+    func disableDurationTitle(totalSeconds: Int) -> String {
+        let totalMinutes = totalSeconds / 60
+        if totalMinutes % 60 == 0 {
+            let hours = totalMinutes / 60
+            let hourUnit = localizedUnit(hours, singular: "hour", plural: "hours")
+            return "\(hours) \(hourUnit)"
+        }
+        let minuteUnit = localizedUnit(totalMinutes, singular: "minute", plural: "minutes")
+        return "\(totalMinutes) \(minuteUnit)"
+    }
+
+    func disableRemainingSeconds() -> Int {
+        guard let until = disableUntil else { return 0 }
+        return max(0, Int(ceil(until.timeIntervalSinceNow)))
+    }
+
+    func disableCountdownTitle(remainingSeconds: Int) -> String {
+        let totalMinutes = Int(ceil(Double(remainingSeconds) / 60))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        let hourUnit = localizedUnit(hours, singular: "hour", plural: "hours")
+        let minuteUnit = localizedUnit(minutes, singular: "minute", plural: "minutes")
+        return String(format: t("disabled_for_countdown"), hours, hourUnit, minutes, minuteUnit)
+    }
+
+    func updateDisableStatus(remainingSeconds: Int?) {
+        guard let seconds = remainingSeconds else {
+            if let item = disableStatusMenuItem, mainMenu.index(of: item) != -1 {
+                mainMenu.removeItem(item)
+            }
+            return
+        }
+
+        if disableStatusMenuItem == nil {
+            disableStatusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        }
+
+        if let item = disableStatusMenuItem {
+            item.title = disableCountdownTitle(remainingSeconds: seconds)
+            if mainMenu.index(of: item) == -1 {
+                mainMenu.insertItem(item, at: 0)
+            }
+        }
+    }
+
+    func startDisableTimer(reset: Bool = false) {
+        if reset { clearTimer(&disableTimer) }
+        if disableTimer != nil { return }
+        disableTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
+            self.syncDisableForState()
+        })
+        if let timer = disableTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    func stopTemporaryDisable() {
+        disabled = false
+        disableUntil = nil
+        disableDuration = 0
+        clearTimer(&disableTimer)
+        updateDisableStatus(remainingSeconds: nil)
+    }
+
+    func syncDisableForState() {
+        let remaining = disableRemainingSeconds()
+        if remaining > 0 {
+            disabled = true
+            startDisableTimer()
+            updateDisableStatus(remainingSeconds: remaining)
+            return
+        }
+        if disableUntil != nil || disabled {
+            stopTemporaryDisable()
+        }
+    }
+
     func constructRSSIMenu(_ menu: NSMenu, _ action: Selector) {
         menu.addItem(withTitle: t("closer"), action: nil, keyEquivalent: "")
         for proximity in stride(from: -30, to: -100, by: -5) {
@@ -589,9 +731,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     
     func constructMenu() {
         monitorMenuItem = mainMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
+        mainMenu.addItem(NSMenuItem.separator())
         
         var item: NSMenuItem
 
+        item = mainMenu.addItem(withTitle: t("disable_for_duration"), action: nil, keyEquivalent: "")
+        item.submenu = disableForMenu
+        constructDisableForMenu()
         item = mainMenu.addItem(withTitle: t("lock_now"), action: #selector(lockNow), keyEquivalent: "")
         mainMenu.addItem(NSMenuItem.separator())
 
@@ -678,6 +824,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         mainMenu.addItem(NSMenuItem.separator())
         mainMenu.addItem(withTitle: t("quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         statusItem.menu = mainMenu
+        syncDisableForState()
     }
 
     func checkAccessibility() {

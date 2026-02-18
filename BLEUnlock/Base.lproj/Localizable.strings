@@ -37,3 +37,8 @@
 "use_screensaver_to_lock" = "Use Screensaver to Lock";
 "wake_on_proximity" = "Wake on Proximity";
 "wake_without_unlocking" = "Wake without Unlocking";
+"disable_for_duration" = "Disable for Duration";
+"not_applicable" = "N/A";
+"hour" = "hour";
+"hours" = "hours";
+"disabled_for_countdown" = "Disabled for %d %@ %d %@";
