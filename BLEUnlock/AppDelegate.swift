@@ -32,18 +32,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     var inScreensaver = false
     var lastRSSI: Int? = nil
     var didRunEventScriptSinceLock = false
-    var disabled = false
     var disableUntil: Date?
     var disableDuration = 0
-    var disableTimer: Timer?
-    var disableStatusMenuItem: NSMenuItem?
+    var disableStateTimer: Timer?
+    var disableDurationStateMenuItem: NSMenuItem?
+    var disableSleepPreventionStateMenuItem: NSMenuItem?
 
     func menuWillOpen(_ menu: NSMenu) {
-        syncDisableForState()
+        syncDisableState()
         if menu == deviceMenu {
             ble.startScanning()
         } else if menu == disableForMenu {
-            let isDisabled = disabled
+            let isDisabled = isTemporarilyDisabled()
             for item in menu.items {
                 if item.action == #selector(setDisableFor) {
                     if item.tag == 0 {
@@ -238,7 +238,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func updatePresence(presence: Bool, reason: String) {
-        if disabled {
+        if isDisabled() {
             manualLock = false
             return
         }
@@ -310,7 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
     
     func tryUnlockScreen() {
-        guard !disabled else { return }
+        guard !isDisabled() else { return }
         guard !manualLock else { return }
         guard ble.presence else { return }
         guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
@@ -375,7 +375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     @objc func onUnlock() {
         manualLock = false
         didRunEventScriptSinceLock = false
-        guard !disabled else { return }
+        guard !isDisabled() else { return }
         Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             print("onUnlock")
             if Date().timeIntervalSince1970 >= self.unlockedAt + 10 {
@@ -579,6 +579,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         prefs.set(value, forKey: "sleepDisplay")
         menuItem.state = value ? .on : .off
     }
+
+    @objc func toggleDisableWhileDisplaySleepIsPrevented(_ menuItem: NSMenuItem) {
+        let value = !prefs.bool(forKey: "disableWhileDisplaySleepPrevented")
+        prefs.set(value, forKey: "disableWhileDisplaySleepPrevented")
+        menuItem.state = value ? .on : .off
+        syncDisableState()
+    }
     
     @objc func togglePassiveMode(_ menuItem: NSMenuItem) {
         let passiveMode = !prefs.bool(forKey: "passiveMode")
@@ -616,10 +623,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     func startTemporaryDisable(duration: Int) {
         disableDuration = duration
         disableUntil = Date().addingTimeInterval(Double(duration))
-        disabled = true
         clearTimer(&wakeTimer)
-        startDisableTimer(reset: true)
-        syncDisableForState()
+        syncDisableState()
     }
 
     @objc func setDisableFor(_ menuItem: NSMenuItem) {
@@ -658,6 +663,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         return max(0, Int(ceil(until.timeIntervalSinceNow)))
     }
 
+    func isTemporarilyDisabled() -> Bool {
+        return disableRemainingSeconds() > 0
+    }
+
     func disableCountdownTitle(remainingSeconds: Int) -> String {
         let totalMinutes = Int(ceil(Double(remainingSeconds) / 60))
         let hours = totalMinutes / 60
@@ -667,56 +676,75 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         return String(format: t("disabled_for_countdown"), hours, hourUnit, minutes, minuteUnit)
     }
 
-    func updateDisableStatus(remainingSeconds: Int?) {
-        guard let seconds = remainingSeconds else {
-            if let item = disableStatusMenuItem, mainMenu.index(of: item) != -1 {
-                mainMenu.removeItem(item)
-            }
-            return
-        }
-
-        if disableStatusMenuItem == nil {
-            disableStatusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        }
-
-        if let item = disableStatusMenuItem {
-            item.title = disableCountdownTitle(remainingSeconds: seconds)
-            if mainMenu.index(of: item) == -1 {
-                mainMenu.insertItem(item, at: 0)
-            }
-        }
+    func disableDurationStateTitle(remainingSeconds: Int?) -> String? {
+        guard let seconds = remainingSeconds else { return nil }
+        return disableCountdownTitle(remainingSeconds: seconds)
     }
 
-    func startDisableTimer(reset: Bool = false) {
-        if reset { clearTimer(&disableTimer) }
-        if disableTimer != nil { return }
-        disableTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
-            self.syncDisableForState()
+    func disableSleepPreventionStateTitle() -> String? {
+        guard isDisableWhileDisplaySleepPreventedActive() else { return nil }
+        return t("disabled_due_to_display_sleep_prevention")
+    }
+
+    func updateDisableStateMenuItem(_ menuItem: NSMenuItem?, title: String?) {
+        guard let item = menuItem else { return }
+        guard let title = title else {
+            item.isHidden = true
+            return
+        }
+        item.title = title
+        item.isHidden = false
+    }
+
+    func updateDisableStateStatus(durationTitle: String?, sleepPreventionTitle: String?) {
+        updateDisableStateMenuItem(disableDurationStateMenuItem, title: durationTitle)
+        updateDisableStateMenuItem(disableSleepPreventionStateMenuItem, title: sleepPreventionTitle)
+    }
+
+    func startDisableStateTimer() {
+        if disableStateTimer != nil { return }
+        disableStateTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
+            self.syncDisableState()
         })
-        if let timer = disableTimer {
+        if let timer = disableStateTimer {
             RunLoop.main.add(timer, forMode: .common)
         }
     }
 
     func stopTemporaryDisable() {
-        disabled = false
         disableUntil = nil
         disableDuration = 0
-        clearTimer(&disableTimer)
-        updateDisableStatus(remainingSeconds: nil)
+        syncDisableState()
     }
 
-    func syncDisableForState() {
+    func syncDisableState() {
         let remaining = disableRemainingSeconds()
-        if remaining > 0 {
-            disabled = true
-            startDisableTimer()
-            updateDisableStatus(remainingSeconds: remaining)
-            return
+        let temporarilyDisabled = remaining > 0
+        if !temporarilyDisabled {
+            disableUntil = nil
+            disableDuration = 0
         }
-        if disableUntil != nil || disabled {
-            stopTemporaryDisable()
+
+        let durationTitle = disableDurationStateTitle(remainingSeconds: temporarilyDisabled ? remaining : nil)
+        let sleepPreventionTitle = disableSleepPreventionStateTitle()
+        updateDisableStateStatus(durationTitle: durationTitle, sleepPreventionTitle: sleepPreventionTitle)
+
+        let shouldRunTimer = temporarilyDisabled || prefs.bool(forKey: "disableWhileDisplaySleepPrevented")
+        if shouldRunTimer {
+            startDisableStateTimer()
+        } else {
+            clearTimer(&disableStateTimer)
         }
+    }
+
+    func isDisabled() -> Bool {
+        if isTemporarilyDisabled() { return true }
+        return isDisableWhileDisplaySleepPreventedActive()
+    }
+
+    func isDisableWhileDisplaySleepPreventedActive() -> Bool {
+        guard prefs.bool(forKey: "disableWhileDisplaySleepPrevented") else { return false }
+        return isDisplaySleepPrevented()
     }
 
     func constructRSSIMenu(_ menu: NSMenu, _ action: Selector) {
@@ -730,6 +758,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
     
     func constructMenu() {
+        disableDurationStateMenuItem = mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "")
+        disableDurationStateMenuItem?.isHidden = true
+        disableSleepPreventionStateMenuItem = mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "")
+        disableSleepPreventionStateMenuItem?.isHidden = true
         monitorMenuItem = mainMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
         mainMenu.addItem(NSMenuItem.separator())
         
@@ -738,6 +770,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         item = mainMenu.addItem(withTitle: t("disable_for_duration"), action: nil, keyEquivalent: "")
         item.submenu = disableForMenu
         constructDisableForMenu()
+        item = mainMenu.addItem(withTitle: t("disable_while_display_sleep_is_prevented"), action: #selector(toggleDisableWhileDisplaySleepIsPrevented), keyEquivalent: "")
+        if prefs.bool(forKey: "disableWhileDisplaySleepPrevented") {
+            item.state = .on
+        }
+        mainMenu.addItem(NSMenuItem.separator())
         item = mainMenu.addItem(withTitle: t("lock_now"), action: #selector(lockNow), keyEquivalent: "")
         mainMenu.addItem(NSMenuItem.separator())
 
@@ -807,7 +844,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         if prefs.bool(forKey: "sleepDisplay") {
             item.state = .on
         }
-        
+
         mainMenu.addItem(withTitle: t("set_password"), action: #selector(askPassword), keyEquivalent: "")
 
         item = mainMenu.addItem(withTitle: t("passive_mode"), action: #selector(togglePassiveMode), keyEquivalent: "")
@@ -824,7 +861,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         mainMenu.addItem(NSMenuItem.separator())
         mainMenu.addItem(withTitle: t("quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         statusItem.menu = mainMenu
-        syncDisableForState()
+        syncDisableState()
     }
 
     func checkAccessibility() {

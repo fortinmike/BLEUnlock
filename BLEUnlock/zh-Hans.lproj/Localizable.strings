@@ -42,3 +42,5 @@
 "hour" = "小时";
 "hours" = "小时";
 "disabled_for_countdown" = "已禁用，还剩 %d%@%d%@";
+"disable_while_display_sleep_is_prevented" = "当显示器睡眠被阻止时禁用";
+"disabled_due_to_display_sleep_prevention" = "由于显示器睡眠被阻止，已禁用";

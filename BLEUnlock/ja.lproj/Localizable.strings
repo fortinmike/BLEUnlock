@@ -42,3 +42,5 @@
 "hour" = "時間";
 "hours" = "時間";
 "disabled_for_countdown" = "%d%@%d%@の間無効";
+"disable_while_display_sleep_is_prevented" = "画面スリープが抑止されている間は無効化";
+"disabled_due_to_display_sleep_prevention" = "画面スリープ抑止中のため無効";

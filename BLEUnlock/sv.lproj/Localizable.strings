@@ -42,3 +42,5 @@
 "hour" = "timme";
 "hours" = "timmar";
 "disabled_for_countdown" = "Inaktiverad i %d %@ %d %@";
+"disable_while_display_sleep_is_prevented" = "Inaktivera när skärmsömn förhindras";
+"disabled_due_to_display_sleep_prevention" = "Inaktiverad eftersom skärmsömn förhindras";

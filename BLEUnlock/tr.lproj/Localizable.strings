@@ -42,3 +42,5 @@
 "hour" = "saat";
 "hours" = "saat";
 "disabled_for_countdown" = "%d %@ %d %@ boyunca devre dışı";
+"disable_while_display_sleep_is_prevented" = "Ekran Uykusu Engellenirken Devre Dışı Bırak";
+"disabled_due_to_display_sleep_prevention" = "Ekran uykusu engellendiği için devre dışı";
