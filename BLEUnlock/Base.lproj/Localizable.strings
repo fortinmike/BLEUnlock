@@ -43,4 +43,4 @@
 "hours" = "hours";
 "disabled_for_countdown" = "Disabled for %d %@ %d %@";
 "disable_while_display_sleep_is_prevented" = "Disable While Display Sleep is Prevented";
-"disabled_due_to_display_sleep_prevention" = "Disabled Due to Display Sleep Prevention";
+"disabled_due_to_display_sleep_prevention" = "Disabled because display sleep is prevented";
