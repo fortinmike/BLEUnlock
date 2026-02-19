@@ -37,3 +37,8 @@
 "use_screensaver_to_lock" = "Kilit ekranı için ekran kuruyucu kullan";
 "wake_on_proximity" = "Uyandırma yakınlığı";
 "wake_without_unlocking" = "Kilidi açmadan uyanın";
+"disable_for_duration" = "Belirli Süre Devre Dışı Bırak";
+"not_applicable" = "Yok";
+"hour" = "saat";
+"hours" = "saat";
+"disabled_for_countdown" = "%d %@ %d %@ boyunca devre dışı";

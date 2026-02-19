@@ -37,3 +37,8 @@
 "use_screensaver_to_lock" = "Använd skärmsläckare för att låsa";
 "wake_on_proximity" = "Väck om i närheten";
 "wake_without_unlocking" = "Vakna utan att låsa upp";
+"disable_for_duration" = "Inaktivera under tid";
+"not_applicable" = "Ej tillämpligt";
+"hour" = "timme";
+"hours" = "timmar";
+"disabled_for_countdown" = "Inaktiverad i %d %@ %d %@";

@@ -37,3 +37,8 @@
 "use_screensaver_to_lock" = "用屏保来锁定它";
 "wake_on_proximity" = "靠近唤醒";
 "wake_without_unlocking" = "唤醒时不需解锁";
+"disable_for_duration" = "按时长禁用";
+"not_applicable" = "不适用";
+"hour" = "小时";
+"hours" = "小时";
+"disabled_for_countdown" = "已禁用，还剩 %d%@%d%@";
