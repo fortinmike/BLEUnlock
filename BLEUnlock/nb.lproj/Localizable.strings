@@ -42,3 +42,5 @@
 "hour" = "time";
 "hours" = "timer";
 "disabled_for_countdown" = "Deaktivert i %d %@ %d %@";
+"disable_while_display_sleep_is_prevented" = "Deaktiver mens skjermsøvn forhindres";
+"disabled_due_to_display_sleep_prevention" = "Deaktivert fordi skjermsøvn forhindres";

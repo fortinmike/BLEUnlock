@@ -42,3 +42,5 @@
 "hour" = "heure";
 "hours" = "heures";
 "disabled_for_countdown" = "Désactivé pendant %d %@ %d %@";
+"disable_while_display_sleep_is_prevented" = "Désactiver lorsque la mise en veille de l’écran est empêchée";
+"disabled_due_to_display_sleep_prevention" = "Désactivé car la mise en veille de l’écran est empêchée";

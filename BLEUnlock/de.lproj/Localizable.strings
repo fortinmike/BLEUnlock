@@ -42,3 +42,5 @@
 "hour" = "Stunde";
 "hours" = "Stunden";
 "disabled_for_countdown" = "Deaktiviert für %d %@ %d %@";
+"disable_while_display_sleep_is_prevented" = "Deaktivieren, wenn der Ruhezustand des Bildschirms verhindert wird";
+"disabled_due_to_display_sleep_prevention" = "Deaktiviert, weil der Ruhezustand des Bildschirms verhindert wird";
